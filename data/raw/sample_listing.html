@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Sample Swiss Housing Listings</title></head>
+<body>
+<!--
+  Offline fixture used by src/scraper.py when the live site is unreachable
+  (e.g. Cloudflare blocks the request). Structure mimics a simplified
+  Homegate-style listings page so the same parsing code path works.
+-->
+<main>
+  <article class="listing" data-id="1">
+    <h2 class="title">Modern 3.5-room apartment in Zurich</h2>
+    <span class="price">CHF 2'850.—</span>
+    <span class="size">85 m²</span>
+    <span class="rooms">3.5 rooms</span>
+    <span class="location">Zurich, ZH</span>
+    <ul class="features"><li>balcony</li><li>parking</li></ul>
+    <p class="description">Bright, renovated flat with balcony and underground parking. Near public transport. Fully furnished kitchen.</p>
+  </article>
+
+  <article class="listing" data-id="2">
+    <h2 class="title">Cozy 2-room studio in Geneva</h2>
+    <span class="price">CHF 1'950.—</span>
+    <span class="size">52 m²</span>
+    <span class="rooms">2 rooms</span>
+    <span class="location">Geneva, GE</span>
+    <ul class="features"><li>balcony</li></ul>
+    <p class="description">Charming city-centre studio with a small balcony. No parking available. Unfurnished.</p>
+  </article>
+
+  <article class="listing" data-id="3">
+    <h2 class="title">Spacious 4.5-room family flat in Bern</h2>
+    <span class="price">CHF 3'200.—</span>
+    <span class="size">112 m²</span>
+    <span class="rooms">4.5 rooms</span>
+    <span class="location">Bern, BE</span>
+    <ul class="features"><li>parking</li><li>garden</li></ul>
+    <p class="description">Family-friendly apartment with garden access and two parking spots. No balcony. Kitchen is furnished.</p>
+  </article>
+
+  <article class="listing" data-id="4">
+    <h2 class="title">Luxury 5.5-room penthouse in Basel</h2>
+    <span class="price">CHF 5'400.—</span>
+    <span class="size">165 m²</span>
+    <span class="rooms">5.5 rooms</span>
+    <span class="location">Basel, BS</span>
+    <ul class="features"><li>balcony</li><li>parking</li><li>elevator</li></ul>
+    <p class="description">Premium penthouse with large rooftop balcony, two parking spaces, and private elevator access. Fully furnished.</p>
+  </article>
+
+  <article class="listing" data-id="5">
+    <h2 class="title">Student 1.5-room apartment in Lausanne</h2>
+    <span class="price">CHF 1'250.—</span>
+    <span class="size">28 m²</span>
+    <span class="rooms">1.5 rooms</span>
+    <span class="location">Lausanne, VD</span>
+    <ul class="features"></ul>
+    <p class="description">Compact unit close to EPFL campus. No balcony, no parking. Shared laundry. Unfurnished.</p>
+  </article>
+
+  <article class="listing" data-id="6">
+    <h2 class="title">3-room apartment in Lucerne</h2>
+    <span class="price">CHF 2'150.—</span>
+    <span class="size">74 m²</span>
+    <span class="rooms">3 rooms</span>
+    <span class="location">Lucerne, LU</span>
+    <ul class="features"><li>balcony</li></ul>
+    <p class="description">Quiet residential area with lake view. Balcony included, parking extra. Kitchen partially furnished.</p>
+  </article>
+
+  <article class="listing" data-id="7">
+    <h2 class="title">4-room apartment in Winterthur</h2>
+    <span class="price">CHF 2'400.—</span>
+    <span class="size">95 m²</span>
+    <span class="rooms">4 rooms</span>
+    <span class="location">Winterthur, ZH</span>
+    <ul class="features"><li>parking</li></ul>
+    <p class="description">Family apartment near schools. One indoor parking spot. No balcony. Unfurnished.</p>
+  </article>
+
+  <article class="listing" data-id="8">
+    <h2 class="title">2.5-room apartment in St. Gallen</h2>
+    <span class="price">CHF 1'680.—</span>
+    <span class="size">58 m²</span>
+    <span class="rooms">2.5 rooms</span>
+    <span class="location">St. Gallen, SG</span>
+    <ul class="features"><li>balcony</li><li>parking</li></ul>
+    <p class="description">Newly renovated with a south-facing balcony and garage spot. Furnished.</p>
+  </article>
+
+  <article class="listing" data-id="9">
+    <h2 class="title">3.5-room apartment in Lugano</h2>
+    <span class="price">CHF 2'750.—</span>
+    <span class="size">88 m²</span>
+    <span class="rooms">3.5 rooms</span>
+    <span class="location">Lugano, TI</span>
+    <ul class="features"><li>balcony</li><li>pool</li></ul>
+    <p class="description">Mediterranean-style flat with shared pool and large balcony. No parking. Furnished.</p>
+  </article>
+
+  <article class="listing" data-id="10">
+    <h2 class="title">4.5-room apartment in Zug</h2>
+    <span class="price">CHF 4'100.—</span>
+    <span class="size">128 m²</span>
+    <span class="rooms">4.5 rooms</span>
+    <span class="location">Zug, ZG</span>
+    <ul class="features"><li>balcony</li><li>parking</li><li>elevator</li></ul>
+    <p class="description">High-end apartment with balcony, two parking spots, and concierge service. Furnished.</p>
+  </article>
+
+  <article class="listing" data-id="11">
+    <h2 class="title">2-room apartment in Fribourg</h2>
+    <span class="price">CHF 1'420.—</span>
+    <span class="size">48 m²</span>
+    <span class="rooms">2 rooms</span>
+    <span class="location">Fribourg, FR</span>
+    <ul class="features"></ul>
+    <p class="description">Basic student flat. No balcony, no parking. Close to university.</p>
+  </article>
+
+  <article class="listing" data-id="12">
+    <h2 class="title">3-room apartment in Neuchâtel</h2>
+    <span class="price">CHF 1'890.—</span>
+    <span class="size">72 m²</span>
+    <span class="rooms">3 rooms</span>
+    <span class="location">Neuchâtel, NE</span>
+    <ul class="features"><li>balcony</li></ul>
+    <p class="description">Lake-view apartment with balcony. Parking available on request. Unfurnished.</p>
+  </article>
+</main>
+</body>
+</html>

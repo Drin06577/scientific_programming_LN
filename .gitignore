@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Environment
+.env
+.env.local
+
+# Data / DB
+housing.db
+housing.db-journal
+data/processed/*.csv
+data/processed/*.parquet
+data/raw/*.json
+
+# Keep fixture + directory placeholders
+!data/raw/sample_listing.html
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/
+
+# Generated figures
+figures/
+*.png
+!docs/*.png
+
+PHASES.md
+SETUP.md
