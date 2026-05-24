@@ -18,6 +18,7 @@ housing.db-journal
 data/processed/*.csv
 data/processed/*.parquet
 data/raw/*.json
+data/llm_cache.sqlite
 
 # Keep fixture + directory placeholders
 !data/raw/sample_listing.html
