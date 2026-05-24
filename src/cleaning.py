@@ -82,10 +82,12 @@ class DataCleaner:
             "rooms": self.clean_rooms(raw.get("rooms", "")),
             "city": city,
             "canton": canton,
+            "zip_code": str(raw.get("zip_code", "") or "").strip(),
             "features": features,
             "balcony": has_balcony,
             "parking": has_parking,
             "description": raw.get("description", "").strip(),
+            "listing_url": raw.get("listing_url", "").strip(),
         }
 
 

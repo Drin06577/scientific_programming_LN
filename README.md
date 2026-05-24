@@ -1,73 +1,84 @@
 # 🏠 AI-Enhanced Swiss Housing Price Analysis
 
-Scientific Programming module project — Switzerland housing prices via **web
-scraping + regex cleaning + OpenAI enrichment + SQLite + pandas + statistical
-testing + Streamlit**.
+Scientific Programming module — Switzerland housing rents via **web
+scraping + regex cleaning + OpenAI enrichment + data-quality validation +
+SQLite (incl. window functions) + pandas + statistical testing with effect
+sizes + interactive Plotly dashboard**.
 
 ---
 
 ## Research question
 
 > Which factors (size, number of rooms, location, features) significantly
-> influence housing prices in Switzerland, and are these relationships
-> statistically significant?
+> influence Swiss apartment rents, and are these relationships statistically
+> significant?
+
+We answer this on a sample of ~200 listings from **Canton Zurich** (Flatfox),
+running a full Pearson / Spearman / OLS / Welch t-test / Mann-Whitney
+battery with effect sizes, and surfacing the findings in a multi-tab
+analytics dashboard.
 
 ---
 
 ## Architecture
 
 ```
-ZURICH COLLECTOR  (Flatfox JSON API, canton ZH only)
-    ↓
-RAW JSON  (data/raw/zurich_apartments.json  —  statistics + listings)
-    ↓
-DETAIL-PAGE SCRAPER  (requests + BeautifulSoup per URL, OOP)
-    ↓
-DATA CLEANING   (Regex + LLM, OOP)
-    ↓
-SQLITE DATABASE (housing.db)
-    ↓
-PANDAS ANALYSIS
-    ↓
-STATISTICAL TESTING (p-values)
-    ↓
-VISUALIZATION
-    ↓
-STREAMLIT DASHBOARD (minimal)
+ZURICH COLLECTOR  (Flatfox JSON API, canton ZH only — strict object-type filter)
+        ↓
+RAW JSON         (data/raw/zurich_apartments.json — listings + summary stats)
+        ↓
+DETAIL-PAGE SCRAPER  (requests + BeautifulSoup, threaded, OOP)
+        ↓
+REGEX CLEANING       (typed fields + balcony/parking flags)
+        ↓
+LLM ENRICHMENT       (OpenAI gpt-4o-mini, SQLite-cached, regex fallback)
+        ↓
+DATA-QUALITY VALIDATOR  (duplicates, impossibles, CHF/m² band, IQR outliers)
+        ↓
+SQLITE DATABASE      (apartments table + v_apartments view)
+        ↓
+PANDAS + STATS       (Pearson, Spearman, OLS, Welch, Mann-Whitney, Shapiro)
+        ↓
+INSIGHTS GENERATOR   (auto-derived business findings, ranked by confidence)
+        ↓
+STREAMLIT DASHBOARD  (Plotly, multi-tab, filters, geographic map, SQL explorer)
 ```
 
 ## Project structure
 
 ```
 SciPro/
-├── PHASES.md               # Phase tracker
-├── SETUP.md                # Binding spec
 ├── README.md
+├── CLAUDE.md                # WHAT the system is
+├── SKILL.md                 # HOW to work in this repo
 ├── requirements.txt
 ├── .env.example
-├── .gitignore
 ├── data/
 │   ├── raw/
 │   │   ├── sample_listing.html      # offline demo fixture
 │   │   └── zurich_apartments.json   # generated (Zurich dataset + stats)
-│   └── processed/
-│       └── apartments.csv           # generated
+│   ├── processed/
+│   │   └── apartments.csv           # generated, post-validation
+│   └── llm_cache.sqlite             # persistent LLM extraction cache
 ├── notebooks/
-│   └── analysis.ipynb
+│   └── analysis.ipynb               # full walkthrough
 ├── src/
 │   ├── scraper.py          # OOP scraper (requests + BeautifulSoup)
+│   ├── collect_zurich.py   # Zurich-canton bulk collector
 │   ├── cleaning.py         # OOP + regex
-│   ├── database.py         # SQLite + SQL queries
+│   ├── data_quality.py     # validation + outlier removal + reporting
+│   ├── database.py         # SQLite + SQL queries (incl. window functions)
 │   ├── analysis.py         # pandas (procedural)
-│   ├── statistics.py       # correlation + t-test + p-values
-│   ├── visualization.py    # seaborn charts
-│   ├── llm_helper.py       # OpenAI (with regex fallback)
-│   └── pipeline.py         # glue: scrape → ... → stats
+│   ├── statistics.py       # tests + effect sizes + plain-language output
+│   ├── insights.py         # auto-generated business findings
+│   ├── visualization.py    # matplotlib + Plotly charts
+│   ├── llm_helper.py       # OpenAI (with regex fallback + caching)
+│   └── pipeline.py         # glue: collect → ... → insights
 ├── app/
-│   └── streamlit_app.py
+│   └── streamlit_app.py    # multi-tab analytics dashboard
 ├── docs/
 │   └── presentation_appendix.md
-└── housing.db              # generated
+└── housing.db              # generated SQLite database
 ```
 
 ---
@@ -86,67 +97,20 @@ pip install -r requirements.txt
 
 ### 2. Environment variables
 
-Copy `.env.example` to `.env` and fill in:
-
 ```bash
 cp .env.example .env
 ```
 
-| Variable          | Default                    | Purpose                               |
-|-------------------|----------------------------|---------------------------------------|
-| `OPENAI_API_KEY`  | —                          | Enables LLM feature extraction.       |
-| `MODEL`           | `gpt-4o-mini`              | OpenAI chat model.                    |
-| `DB_PATH`         | `./housing.db`             | SQLite location.                      |
-| `TARGET_URL`      | `https://flatfox.ch`       | Live scrape target.                   |
+| Variable          | Default                  | Purpose                            |
+|-------------------|--------------------------|------------------------------------|
+| `OPENAI_API_KEY`  | —                        | Enables LLM feature extraction.    |
+| `MODEL`           | `gpt-4o-mini`            | OpenAI chat model.                 |
+| `DB_PATH`         | `./housing.db`           | SQLite location.                   |
+| `LLM_CACHE_PATH`  | `data/llm_cache.sqlite`  | Persistent LLM-result cache.       |
+| `TARGET_URL`      | `https://flatfox.ch`     | Live scrape target.                |
 
 The pipeline runs **without** an OpenAI key — the LLM step degrades to a
-regex fallback.
-
----
-
-## Zurich-canton bulk collection
-
-Separate one-shot task: collect 150–200 clean ZH apartment listings and
-compute summary statistics. Driven by `src/collect_zurich.py`.
-
-```bash
-python -m src.collect_zurich          # target 200
-python -m src.collect_zurich 150      # smaller run
-```
-
-Filters: canton `ZH` only, full apartments only (no WG / single room /
-furnished / temporary), price ≤ 10 000 CHF, size ≥ 20 m², deduplicated
-by URL and by (title, price, size).
-
-Output → `data/raw/zurich_apartments.json`:
-
-```json
-{
-  "statistics": {
-    "mean_rent": 4094.7,
-    "median_rent": 3840.0,
-    "mean_price_per_m2": 54.02,
-    "median_price_per_m2": 46.1,
-    "min_rent": 1500.0,
-    "max_rent": 9820.0
-  },
-  "listings": [
-    {
-      "title": "…",
-      "rent_price": 2870,
-      "rooms": 4.5,
-      "living_space_m2": 69,
-      "city": "Fehraltorf",
-      "zip_code": "8320",
-      "listing_url": "https://flatfox.ch/en/flat/…"
-    }
-  ]
-}
-```
-
-Runtime is ~4–5 min (Flatfox's API ignores location filters, so the
-collector paginates the whole ~34 k-listing index and filters
-client-side).
+regex fallback. Subsequent runs hit the cache and pay zero OpenAI cost.
 
 ---
 
@@ -158,18 +122,12 @@ client-side).
 python -m src.pipeline
 ```
 
-The pipeline is **Zurich-canton only**: it loads the cached Zurich
-dataset (`data/raw/zurich_apartments.json`, produced by the collector
-described below), scrapes each listing's detail page for description +
-features, and feeds the result through cleaning → LLM → SQLite → stats.
-Default cap is 50 listings; bump `max_listings` in the module's
-`__main__` block for the full 200-listing run.
-
-Produces:
+Prints quality report, statistical tests, and the top auto-generated
+insights to stdout. Produces:
 - `data/raw/zurich_apartments.json` (if missing, runs the collector)
 - `data/processed/apartments.csv`
 - `housing.db`
-- `figures/*.png` (if saved)
+- `figures/*.png` (when `save_figures=True`)
 
 ### Notebook walkthrough
 
@@ -177,42 +135,46 @@ Produces:
 jupyter notebook notebooks/analysis.ipynb
 ```
 
-### Streamlit app
+### Streamlit dashboard
 
 ```bash
 streamlit run app/streamlit_app.py
 ```
 
-Opens a dashboard with summary metrics, cleaned data table, SQL query
-results, p-value interpretations, and visualizations.
+Opens a 7-tab analytics dashboard:
+
+| Tab                  | Contains                                                              |
+|----------------------|-----------------------------------------------------------------------|
+| 📈 Overview          | KPI cards + scatter, histogram, violin, correlation heatmap, pairplot |
+| 🗺️ Geography         | Plotly OpenStreetMap bubble map + city bar + CHF/m² boxplot           |
+| 🧪 Statistical tests | Each test with p-value, effect size, interpretation, assumptions      |
+| 💡 Key insights      | Auto-generated business-style findings, ranked by confidence          |
+| 🗄️ SQL explorer      | Schema + 9 canned queries (incl. NTILE & RANK window functions)       |
+| 📋 Listings          | Filterable table with **clickable Flatfox links**, downloadable CSV   |
+| 🧹 Data quality      | Validator report + audit trail of dropped rows                        |
+
+The sidebar exposes filters (city, rooms, price range, balcony, parking,
+free-text search) that propagate to **every** tab — including the
+statistical tests, which re-run on the filtered subset.
 
 ---
 
-## Scraper notes
+## Zurich-canton bulk collection
 
-- **Target:** `flatfox.ch` — a Swiss rental platform. It returns
-  server-rendered HTML on detail pages, so `requests` + `BeautifulSoup`
-  do the actual listing-field extraction (price, size, rooms, features,
-  description) from the HTML, satisfying the `SETUP.md` requirement.
-- **Flow:**
-  1. Ask Flatfox's public JSON index (`/api/v1/public-listing/`) for
-     recent apartment URLs. We paginate and client-side filter to only
-     keep residential object types (APARTMENT, FURNISHED_FLAT, …) with
-     both a rent amount and a room count.
-  2. For each discovered URL, fetch the HTML detail page and parse it
-     with BeautifulSoup — title, `<h2>` price line, the `<tr>`-based
-     facts table (rooms / living space / facilities), pill badges, and
-     the description markdown block.
-- **Fallback:** if the live site is unreachable, the scraper falls back
-  to the bundled fixture `data/raw/sample_listing.html`. The same
-  parsing code path is exercised in both cases — this guarantees the
-  demo is reproducible offline.
-- **Why not Homegate/ImmoScout/newhome?** All three sit behind Cloudflare
-  and return 403 to a plain `requests.get`. Flatfox is the only major
-  Swiss rental site currently scrapable with the stdlib-ish toolkit the
-  module mandates.
-- To switch sources, change `TARGET_URL` in `.env` and adapt the
-  `discover_urls` / `parse_listing` selectors.
+Separate one-shot collector for 150–200 clean ZH apartment listings:
+
+```bash
+python -m src.collect_zurich          # target 200
+python -m src.collect_zurich 150      # smaller run
+```
+
+Filters: canton `ZH` only, full apartments only (no WG / single room /
+furnished / temporary), price ≤ 10 000 CHF, size ≥ 20 m², deduplicated
+by URL and by (title, price, size). Runtime ~4–5 min — Flatfox's API
+ignores location filters, so we paginate the whole ~34 k-listing index
+and filter client-side.
+
+---
 
 ## Database notes
 
@@ -220,32 +182,71 @@ results, p-value interpretations, and visualizations.
   ```bash
   sqlite3 housing.db "SELECT rooms, AVG(price) FROM apartments GROUP BY rooms;"
   ```
-- Table: `apartments` (columns: title, price, size, rooms, city, canton,
-  features, balcony, parking, description, llm_balcony, llm_parking,
-  llm_furnished).
+- Tables: `apartments` (raw) + view `v_apartments` (adds `chf_per_m2`).
+- Advanced query examples (all rendered in the SQL Explorer tab):
+  - `NTILE(4) OVER (ORDER BY price)` → cheap / medium / expensive / luxury
+  - `RANK() OVER (ORDER BY avg_chf_per_m2 DESC)` → city ranking
+  - `AVG(...) OVER (ORDER BY size ROWS BETWEEN 9 PRECEDING AND CURRENT ROW)`
+    → rolling average price by size
 
 ---
 
-## Grading coverage
+## Statistical methodology
 
-Each module below includes `# Requirement coverage: ...` comments pointing
-at the feature it satisfies.
+| Test                            | Why this test                                                        |
+|---------------------------------|----------------------------------------------------------------------|
+| Shapiro-Wilk on price           | Documents whether parametric assumptions hold                        |
+| Pearson r (size ↔ price)        | Both continuous, roughly linear                                      |
+| Spearman ρ (rooms ↔ price)      | Rooms is ordinal-discrete; no normality assumed                      |
+| Pearson r (size ↔ CHF/m²)       | Verifies the "small flats charge more per m²" rule                   |
+| OLS regression (price ~ size)   | Yields an interpretable CHF-per-m² coefficient with 95% CI           |
+| Welch t-test (balcony groups)   | Two means, unequal variances                                         |
+| Mann-Whitney U (parking groups) | Non-parametric alternative; robust to bimodal price distribution     |
 
-| Requirement                   | Where                                                        |
-|-------------------------------|--------------------------------------------------------------|
-| Real-world web scraping       | `src/scraper.py` (`SwissHousingScraper`, `requests`, `bs4`)  |
-| OOP classes                   | `Scraper`, `DataCleaner`, `HousingDatabase`, `LLMProcessor`  |
-| Procedural functions          | `analysis.py`, `statistics.py`, `cleaning.clean_records`     |
-| Lists                         | `parse_page`, `clean_features`, `run_all_tests`              |
-| Dictionaries                  | `parse_listing`, `summary_stats`, `enrich_records`           |
-| Sets                          | `SwissHousingScraper.seen_cantons`, `clean_features`         |
-| Tuples                        | `DataCleaner.clean_location`, `scipy.stats` returns          |
-| Loops                         | `parse_page`, `enrich_records`, `run_all_tests`              |
-| Conditionals                  | all modules (fallback chains, threshold checks)              |
-| Regex                         | `src/cleaning.py`, `src/llm_helper.py` (fallback)            |
-| SQL queries                   | `src/database.py` (avg-by-rooms/location/balcony + top-N)    |
-| p-values + interpretation     | `src/statistics.py` (Pearson + t-test)                       |
-| LLM integration               | `src/llm_helper.py` (OpenAI `gpt-4o-mini`)                   |
-| Visualization                 | `src/visualization.py` (scatter, box, bar)                   |
-| Web app                       | `app/streamlit_app.py`                                       |
-| GitHub-ready structure        | `data/`, `notebooks/`, `src/`, `app/`, `README.md`, …        |
+Each test reports its **statistic, p-value, effect size, plain-language
+interpretation, assumptions, and rationale** — all rendered as cards in
+the dashboard.
+
+---
+
+## Grading-criteria coverage
+
+| Requirement                          | Where                                                            |
+|--------------------------------------|------------------------------------------------------------------|
+| Real-world web scraping              | `src/scraper.py`, `src/collect_zurich.py`                        |
+| OOP classes                          | `SwissHousingScraper`, `DataCleaner`, `HousingDatabase`, `LLMProcessor`, `QualityReport`, `TestResult`, `Insight` |
+| Procedural functions                 | `analysis.py`, `statistics.run_all_tests`, `cleaning.clean_records`, `insights.generate` |
+| Lists / dicts / sets / tuples        | Used throughout — see `# Requirement coverage:` tags             |
+| Loops + conditionals                 | All modules (fallback chains, validators, batch runs)            |
+| Regex                                | `src/cleaning.py`, `src/llm_helper.py` (fallback patterns)       |
+| SQL — basic                          | `database.avg_price_by_rooms`, `avg_price_by_location`, `top_expensive` |
+| SQL — advanced (window functions)    | `database.price_distribution_by_category` (NTILE), `city_ranking_with_premium` (RANK + CTE + subquery), `running_avg_price_by_size` (windowed AVG) |
+| Statistical tests + p-values         | `src/statistics.py` (7 tests, all with effect sizes)             |
+| Effect size + plain-language interp. | Every `TestResult` has `effect_size_label` + `interpretation`    |
+| LLM integration                      | `src/llm_helper.py` (OpenAI gpt-4o-mini, SQLite-cached)          |
+| Data validation                      | `src/data_quality.py` (`validate` + `QualityReport`)             |
+| Visualization — static               | `src/visualization.py` matplotlib/seaborn (notebook)             |
+| Visualization — interactive          | `src/visualization.py` Plotly (dashboard, geographic map, heatmap, pairplot) |
+| Web application                      | `app/streamlit_app.py` (7-tab Plotly dashboard with filters)     |
+| Clickable hyperlinks in tables       | Listings tab uses `st.column_config.LinkColumn`                  |
+| Storytelling / insights              | `src/insights.py` (auto-generated findings)                      |
+| Notebook walkthrough                 | `notebooks/analysis.ipynb`                                       |
+| Cached / persistent intermediate state | `data/llm_cache.sqlite`, `data/raw/zurich_apartments.json`       |
+
+---
+
+## Known tradeoffs
+
+- **Flatfox-only source** — Homegate, ImmoScout, newhome all return 403
+  behind Cloudflare; Flatfox is the only major Swiss rental site
+  scrapable with the stdlib-ish toolkit the module mandates.
+- **Flatfox API ignores location filters** — collector paginates the
+  full ~34 k-listing index and filters client-side.
+- **`gpt-4o-mini` cost vs accuracy** — chosen for the three boolean
+  features we extract; accuracy is cross-checked by the regex fallback.
+- **Cache is content-keyed, not listing-keyed** — two listings with
+  identical descriptions share a cache entry. Invalidate by bumping
+  `LLMProcessor.PROMPT_VERSION`.
+- **Geographic map uses bundled centroids** — accurate enough for a
+  bubble overlay at zoom 8.5; we don't fetch coordinates at runtime,
+  to keep the dashboard offline-capable.
