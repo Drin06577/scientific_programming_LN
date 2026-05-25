@@ -40,3 +40,6 @@ SETUP.md
 
 # Private speaker notes for the video recording — not for the repo.
 presentation_script.md
+
+# Private PDF builder — kept local; the produced PDF is the only deliverable.
+scripts/build_presentation.py
