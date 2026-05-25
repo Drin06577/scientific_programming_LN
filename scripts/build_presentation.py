@@ -274,6 +274,66 @@ def slide_figure(pdf: PdfPages, n: int, total: int, header: str,
     plt.close(fig)
 
 
+def slide_dashboard_tour(pdf: PdfPages, n: int, total: int) -> None:
+    """Visual title-card for the live Streamlit demo segment.
+
+    The presenter shows this slide for ~10 seconds, then switches the
+    screen-share to localhost:8501 and narrates each stop in order.
+    The timestamps on the right match Speaker 2's demo script."""
+    fig, ax = _blank_slide()
+    _slide_header(ax, n, total, "Live demo — Streamlit dashboard")
+    _slide_title(ax, "Live dashboard tour (~3 min)",
+                 "What the static PDF figures cannot show")
+
+    # Left column — context.
+    ax.text(0.07, 0.66, "Why a live tour?", transform=ax.transAxes,
+            fontsize=16, color=PRIMARY, fontweight="bold", va="top", ha="left")
+    why_text = textwrap.fill(
+        "The PDF carries the headline numbers, but the dashboard is "
+        "interactive: every chart re-filters in real time, the geographic "
+        "map is zoom-able, and each suspicious-price listing links straight "
+        "back to Flatfox for verification.",
+        width=44,
+    )
+    ax.text(0.07, 0.60, why_text, transform=ax.transAxes,
+            fontsize=13, color=INK, va="top", ha="left", linespacing=1.45)
+
+    # Right column — six demo stops with timestamps.
+    stops = [
+        ("0:00", "Overview", "KPIs + LLM status badge"),
+        ("0:20", "Sidebar filters", "Every chart reacts live"),
+        ("0:50", "Geography", "Interactive ZH bubble map"),
+        ("1:20", "SQL Explorer", "Window-function queries (NTILE, RANK)"),
+        ("1:50", "Insights", "Auto findings, confidence-tagged"),
+        ("2:20", "Data Quality", "Drop audit + suspicious-price links"),
+    ]
+    ax.text(0.52, 0.66, "Six stops, in order",
+            transform=ax.transAxes, fontsize=16, color=PRIMARY,
+            fontweight="bold", va="top", ha="left")
+    y0 = 0.59
+    row_h = 0.065
+    for i, (ts, tab, desc) in enumerate(stops):
+        y = y0 - i * row_h
+        ax.add_patch(FancyBboxPatch((0.52, y - 0.025), 0.07, 0.045,
+                                     boxstyle="round,pad=0.005",
+                                     facecolor=PRIMARY, edgecolor="none",
+                                     transform=ax.transAxes))
+        ax.text(0.555, y - 0.003, ts, transform=ax.transAxes, fontsize=11,
+                color="white", fontweight="bold", va="center", ha="center")
+        ax.text(0.61, y - 0.003, tab, transform=ax.transAxes, fontsize=13,
+                color=INK, fontweight="bold", va="center", ha="left")
+        ax.text(0.73, y - 0.003, "— " + desc, transform=ax.transAxes,
+                fontsize=12, color=NEUTRAL, va="center", ha="left")
+
+    # Footer cue for the presenter.
+    ax.text(0.5, 0.10,
+            "Presenter cue: switch screen-share to localhost:8501 now.",
+            transform=ax.transAxes, fontsize=12, color=ACCENT, style="italic",
+            fontweight="bold", va="center", ha="center")
+    pdf.savefig(fig, facecolor=PAGE_BG)
+    plt.close(fig)
+
+
 def slide_discussion(pdf: PdfPages, n: int, total: int) -> None:
     fig, ax = _blank_slide()
     _slide_header(ax, n, total, "11. Discussion")
@@ -347,7 +407,11 @@ def slide_thank_you(pdf: PdfPages, n: int, total: int) -> None:
 
 def build_pdf() -> Path:
     OUT_PDF.parent.mkdir(parents=True, exist_ok=True)
-    total = 15  # set explicitly so footer counters render correctly
+    total = 16  # 15 narrated slides + 1 appendix; footer reads "N / 16"
+    # Slide 6 is the headline result; slide 7 is the dashboard demo card
+    # (no figure, see slide_dashboard_tour); slides 8–12 are the remaining
+    # five figures. The presenter shows slide 7 for ~10 s then switches to
+    # screen-share for the 3-min demo described in presentation_script.md.
     figure_slides = [
         (6, "5. Results — size vs rent",
          "Larger flats usually have higher monthly rent",
@@ -358,7 +422,7 @@ def build_pdf() -> Path:
           "But spread is large: same-size "
           "flats can differ by CHF 2 000+ "
           "depending on location and amenities.")),
-        (7, "6. Results — rent by rooms",
+        (8, "7. Results — rent by rooms",
          "Monthly rent by number of rooms",
          "Boxplot of price per room category (≥ 5 listings each)",
          FIG_DIR / "02_rent_by_rooms.png",
@@ -366,7 +430,7 @@ def build_pdf() -> Path:
           "signal than m² (Spearman ρ ≈ 0.15).\n\n"
           "Same-room-count flats vary widely "
           "in m², which dilutes the signal.")),
-        (8, "7. Results — rent ranges",
+        (9, "8. Results — rent ranges",
          "How many listings fall into each rent range?",
          "Fixed bins: 0–2 000, 2 000–3 000, … 6 000+",
          FIG_DIR / "03_rent_ranges.png",
@@ -375,7 +439,7 @@ def build_pdf() -> Path:
           "~70% of Zurich-canton listings rent "
           "between CHF 2 000 and 4 000 / month. "
           "Only 7 cross the CHF 6 000 line.")),
-        (9, "8. Results — feature impact",
+        (10, "9. Results — feature impact",
          "Do specific features affect monthly rent?",
          "Mean + median rent, with sample sizes",
          FIG_DIR / "04_feature_impact.png",
@@ -384,7 +448,7 @@ def build_pdf() -> Path:
           "Balcony +CHF 150 not significant. "
           "Parking shows a small negative gap, "
           "driven by location confounding.")),
-        (10, "9. Results — correlation matrix",
+        (11, "10. Results — correlation matrix",
          "Correlation between numeric housing features",
          "Pearson r — values close to ±1 mean a strong linear link",
          FIG_DIR / "05_correlation_matrix.png",
@@ -393,7 +457,7 @@ def build_pdf() -> Path:
           "• size ↔ rooms: +0.79\n"
           "• size ↔ CHF/m²: −0.58\n\n"
           "Small flats charge a per-m² premium.")),
-        (11, "10. Results — CHF/m² distribution",
+        (12, "11. Results — CHF/m² distribution",
          "Distribution of monthly rent per square metre",
          "Median = CHF 33.2/m²  ·  Mean = CHF 39.1/m²  ·  right-skewed",
          FIG_DIR / "06_chf_per_m2_distribution.png",
@@ -410,17 +474,21 @@ def build_pdf() -> Path:
         slide_methods_stack(pdf, 3, total)
         slide_methods_pipeline(pdf, 4, total)
         slide_methods_qc(pdf, 5, total)
-        for n, hdr, title, sub, path, take in figure_slides:
-            slide_figure(pdf, n, total, hdr, title, sub, path, take)
-        slide_discussion(pdf, 12, total)
-        slide_conclusions(pdf, 13, total)
-        slide_thank_you(pdf, 14, total)
-        # Slide 15 is reserved as a "details / appendix" closer if you want
-        # to extend; build_pdf currently emits 14 slides, so the footer
-        # reads "slide N / 15" leaving one slot free. Comment-out the next
-        # block to drop the placeholder entirely.
+        # Slide 6 = size vs price (first figure_slides entry).
+        # Slide 7 = the dashboard demo card, slotted between size-vs-price
+        # and the remaining results so the live tour reads as part of
+        # "Results" in the deck flow.
+        for entry in figure_slides[:1]:
+            slide_figure(pdf, *entry[:1], total, *entry[1:])
+        slide_dashboard_tour(pdf, 7, total)
+        for entry in figure_slides[1:]:
+            slide_figure(pdf, *entry[:1], total, *entry[1:])
+        slide_discussion(pdf, 13, total)
+        slide_conclusions(pdf, 14, total)
+        slide_thank_you(pdf, 15, total)
+        # Slide 16 — appendix (silent reference card, not narrated).
         fig, ax = _blank_slide()
-        _slide_header(ax, 15, total, "Appendix — repository pointers")
+        _slide_header(ax, 16, total, "Appendix — repository pointers")
         _slide_title(ax, "Where everything lives",
                      "For graders who want to inspect the code")
         _bullets(ax, [
