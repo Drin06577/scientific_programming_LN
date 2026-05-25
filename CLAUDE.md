@@ -23,6 +23,7 @@ significantly influence Swiss housing prices?
 | Install                 | `pip install -r requirements.txt`               |
 | Collect Zurich dataset  | `python -m src.collect_zurich [target]`         |
 | Run full pipeline       | `python -m src.pipeline`                        |
+| Build report figures    | `python -m src.report_figures`                  |
 | Launch UI               | `streamlit run app/streamlit_app.py`            |
 | Notebook walkthrough    | `jupyter notebook notebooks/analysis.ipynb`     |
 | Inspect DB              | `sqlite3 housing.db "SELECT * FROM apartments"` |
@@ -53,7 +54,12 @@ app/streamlit_app.py  (Plotly 7-tab dashboard: Overview, Geography, Stats,
 ### Modules (`src/`)
 
 - `collect_zurich.py` — Flatfox JSON API collector, Zurich-canton only,
-  strict object-type filter.
+  strict object-type filter. Captures full price provenance per listing:
+  `rent_price` (gross), `rent_net`, `additional_costs`, `raw_price_text`
+  (CHF substring from the listing title), `title_price` (int parsed from
+  it), and `price_mismatch` (flag if title CHF and rent_gross diverge by
+  ≥ CHF 100 — Flatfox occasionally serves a stale public_title). Rejects
+  non-monthly / per-m² units before they pollute the rent distribution.
 - `scraper.py` — `SwissHousingScraper` (OOP) for BeautifulSoup parsing of
   detail pages, with offline fixture fallback.
 - `cleaning.py` — regex-based normalization into typed fields. Preserves
@@ -61,9 +67,13 @@ app/streamlit_app.py  (Plotly 7-tab dashboard: Overview, Geography, Stats,
 - `llm_helper.py` — `LLMProcessor` + `enrich_records`; OpenAI call with
   regex fallback and a persistent SQLite cache.
 - `data_quality.py` — `validate(df) → (df_clean, QualityReport)`. Drops
-  duplicates, impossible values (price/size/rooms), CHF/m² outside [10, 200],
-  and Tukey k=3 statistical outliers. Also exposes `extended_summary` and
-  `price_categories`.
+  duplicates, missing prices, impossible values (price/size/rooms), CHF/m²
+  outside [10, 200], and Tukey k=3 statistical outliers. Audits suspicious
+  prices by comparing `title_price` against the structured `price`; rows
+  with a ≥ CHF 100 gap stay in the dataset but are recorded in
+  `QualityReport.suspicious_examples`. `QualityReport.print_summary()`
+  emits the QC console report (scraped / valid / missing / suspicious /
+  removed). Also exposes `extended_summary` and `price_categories`.
 - `database.py` — `HousingDatabase` wrapping `sqlite3`; table `apartments`
   + view `v_apartments`. Canned queries include NTILE quartile bucketing,
   RANK-based city ranking with market-average premium, and a windowed
@@ -81,6 +91,13 @@ app/streamlit_app.py  (Plotly 7-tab dashboard: Overview, Geography, Stats,
   violin+box, CHF/m² histogram, correlation heatmap, geographic
   OpenStreetMap bubble map, scatter matrix, price categories, feature
   comparison.
+- `report_figures.py` — six static, report-ready PNGs saved to
+  `reports/figures/` (01_size_vs_price, 02_rent_by_rooms, 03_rent_ranges,
+  04_feature_impact, 05_correlation_matrix, 06_chf_per_m2_distribution).
+  Light theme, large fonts, fixed rent bins, ≥5-listing room categories,
+  feature-column validation (skips constants / mostly-null columns),
+  Pearson + slope annotation, median/mean reference lines, and a
+  one-line plain-language interpretation printed per plot.
 - `pipeline.py` — end-to-end orchestration. Returns a single dict with
   `df`, `summary`, `extended_summary`, `quality_report`, `dropped_rows`,
   `schema`, `sql`, `tests`, `insights`, `llm`, `db_path`.
@@ -108,7 +125,9 @@ app/streamlit_app.py  (Plotly 7-tab dashboard: Overview, Geography, Stats,
 - **Source of truth for input data**: `data/raw/zurich_apartments.json`.
   The pipeline reuses it if it already contains ≥ 50 listings.
 - **Source of truth for cleaned data**: `data/processed/apartments.csv`,
-  written after validation. Includes `chf_per_m2` and `price_category`.
+  written after validation. Includes `chf_per_m2`, `price_category`,
+  and the price-provenance columns (`raw_price_text`, `title_price`,
+  `rent_net`, `additional_costs`, `price_mismatch`).
 - **Graceful degradation**: missing `OPENAI_API_KEY` falls back to regex;
   hard-fatal errors (401, insufficient_quota) disable OpenAI for the
   session.
@@ -142,6 +161,9 @@ Environment variables (via `.env`):
 - [x] Add auto-generated business insights with confidence tags.
 - [x] Add window-function SQL queries (NTILE, RANK, rolling AVG).
 - [x] Add clickable Flatfox links in the listings table.
+- [x] Capture price provenance (raw text + gross + net + charges) and
+      surface a price QC console report.
+- [x] Add `src.report_figures` — six light-theme PNGs for the printed report.
 - [ ] Short-circuit LLM when regex finds a confident positive with no
       negation (skip API call entirely for obvious listings).
 - [ ] Persist geographic centroid map externally (CSV) so it can be

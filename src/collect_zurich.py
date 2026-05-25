@@ -4,20 +4,19 @@ Strict filters:
   - Canton == ZH
   - Object type is a full apartment (APARTMENT / ATTIC_FLAT / LOFT / …)
   - NOT shared flat, NOT single room, NOT furnished/temporary
-  - price present, size present, rooms present
-  - 20 ≤ living_space_m2, rent_price ≤ 10 000 CHF/month
+  - price present (rent_gross), size present, rooms present
+  - 20 ≤ living_space_m2, 500 ≤ rent_price ≤ 15 000 CHF/month
+  - price_unit == monthly, price_display_type == TOTAL  (rejects per-m²/yearly)
   - de-duplicated by URL and by (title, price, size)
 
-Output: data/raw/zurich_apartments.json — a JSON object:
-    {
-      "statistics": {
-        "mean_rent": ..., "median_rent": ...,
-        "mean_price_per_m2": ..., "median_price_per_m2": ...,
-        "min_rent": ..., "max_rent": ...
-      },
-      "listings": [ {title, rent_price, rooms, living_space_m2,
-                     city, zip_code, listing_url}, ... ]
-    }
+Price provenance: each record carries
+  - rent_price           — numeric authoritative monthly gross rent (rent_gross)
+  - rent_net             — net rent without utilities (rent_net), may be None
+  - additional_costs     — utilities/charges (rent_charges), may be None
+  - raw_price_text       — CHF substring extracted from public_title
+  - title_price          — int parsed from raw_price_text, may be None
+  - price_mismatch       — True if title_price differs from rent_price by ≥ CHF 100
+This lets data_quality.validate flag suspicious extractions transparently.
 
 Usage:
     python -m src.collect_zurich            # collects up to 200
@@ -27,6 +26,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import re
 import statistics as stats
 import sys
 import time
@@ -34,6 +34,35 @@ from pathlib import Path
 from typing import Any
 
 import requests
+
+# Captures a CHF amount from the public_title, e.g.
+#   "…Zürich - CHF 2'870 incl. utilities per month"  →  "2'870"
+#   "…Adliswil - CHF 4'4.0 incl. utilities per month" →  "4'4.0"   (kept verbatim)
+# Swiss thousands separators: typographic apostrophe (’), straight ('), or dot.
+_TITLE_PRICE_RE = re.compile(r"CHF\s*([\d'’.,]+)")
+
+
+def parse_title_price(title: str) -> tuple[str | None, int | None]:
+    """Return (raw_price_text, parsed_int) from a Flatfox listing title.
+
+    Both values may be None when the title carries no parseable CHF amount.
+    The raw text is preserved verbatim so the QC report can show exactly
+    what was on the page; the parsed int is best-effort.
+    """
+    if not title:
+        return None, None
+    m = _TITLE_PRICE_RE.search(title)
+    if not m:
+        return None, None
+    raw = m.group(1)
+    # Strip thousands separators (both apostrophe variants and dots).
+    # Note: dot-as-decimal would be lost too, but rents are whole CHF.
+    digits = re.sub(r"[\D]", "", raw)
+    try:
+        parsed = int(digits) if digits else None
+    except ValueError:
+        parsed = None
+    return raw, parsed
 
 FLATFOX_API = "https://flatfox.ch/api/v1/public-listing/"
 FLATFOX_BASE = "https://flatfox.ch"
@@ -64,12 +93,21 @@ EXCLUDED_OBJECT_TYPES: set[str] = {
     "OFFICE", "SHOP", "COMMERCIAL", "HOBBY_ROOM", "GARDENING",
 }
 
-PRICE_MAX: int = 10_000
+PRICE_MIN: int = 500
+PRICE_MAX: int = 15_000
 SIZE_MIN: int = 20
+# Mismatch between title-displayed CHF and rent_gross above this threshold is
+# treated as suspicious — Flatfox occasionally serves stale public_title text.
+PRICE_MISMATCH_TOLERANCE: int = 100
 
 
 def passes_filters(rec: dict[str, Any]) -> bool:
-    """Strict row-level filter against the spec's criteria."""
+    """Strict row-level filter against the spec's criteria.
+
+    Adds unit guards: rejects per-m² and non-monthly listings whose CHF amount
+    cannot be compared against a monthly rent (this protects the plots from
+    silently mixing CHF/m²/year quotes into the monthly-rent distribution).
+    """
     if rec.get("state") != "ZH":
         return False
     obj_type = rec.get("object_type")
@@ -81,12 +119,17 @@ def passes_filters(rec: dict[str, Any]) -> bool:
         return False
     if rec.get("offer_type") != "RENT":
         return False
+    # Unit guards — drop yearly/per-m² listings before they pollute the dataset.
+    if rec.get("price_unit") and rec.get("price_unit") != "monthly":
+        return False
+    if rec.get("price_display_type") and rec.get("price_display_type") != "TOTAL":
+        return False
     price = rec.get("rent_gross")
     size = rec.get("surface_living")
     rooms = rec.get("number_of_rooms")
     if not price or not size or not rooms:
         return False
-    if price > PRICE_MAX:
+    if not (PRICE_MIN <= price <= PRICE_MAX):
         return False
     if size < SIZE_MIN:
         return False
@@ -94,11 +137,31 @@ def passes_filters(rec: dict[str, Any]) -> bool:
 
 
 def to_output(rec: dict[str, Any]) -> dict[str, Any]:
-    """Shape an API record into the required output schema."""
+    """Shape an API record into the required output schema.
+
+    Captures full price provenance (raw text + parsed title price + gross/net
+    + additional costs) so downstream validators can flag mismatches without
+    having to re-fetch the listing.
+    """
     url = rec.get("url", "")
+    title = rec.get("public_title") or rec.get("short_title") or ""
+    raw_text, title_price = parse_title_price(title)
+    gross = int(rec["rent_gross"])
+    # Stale public_title is a known Flatfox artefact — surface it rather than hide it.
+    mismatch = bool(
+        title_price is not None
+        and abs(title_price - gross) >= PRICE_MISMATCH_TOLERANCE
+    )
+    net = rec.get("rent_net")
+    charges = rec.get("rent_charges")
     return {
-        "title": rec.get("public_title") or rec.get("short_title") or "",
-        "rent_price": int(rec["rent_gross"]),
+        "title": title,
+        "rent_price": gross,
+        "rent_net": int(net) if net is not None else None,
+        "additional_costs": int(charges) if charges is not None else None,
+        "raw_price_text": raw_text,
+        "title_price": title_price,
+        "price_mismatch": mismatch,
         "rooms": float(rec["number_of_rooms"]),
         "living_space_m2": int(rec["surface_living"]),
         "city": (rec.get("city") or "").strip(),

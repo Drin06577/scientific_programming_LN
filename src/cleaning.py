@@ -68,7 +68,13 @@ class DataCleaner:
         return sorted(cleaned)
 
     def clean_record(self, raw: dict) -> dict:
-        """Apply all cleaners to a single raw listing dict."""
+        """Apply all cleaners to a single raw listing dict.
+
+        Preserves price provenance fields from the collector so the data-quality
+        validator can flag suspicious extractions: raw_price_text + title_price
+        come from the listing's public title; additional_costs comes from the
+        Flatfox API's rent_charges; price_mismatch is precomputed.
+        """
         city, canton = self.clean_location(raw.get("location", ""))
         features = self.clean_features(raw.get("features", []))
         # Requirement coverage: conditional binary flags derived from features.
@@ -88,6 +94,12 @@ class DataCleaner:
             "parking": has_parking,
             "description": raw.get("description", "").strip(),
             "listing_url": raw.get("listing_url", "").strip(),
+            # Price provenance (carried through from collector if present).
+            "raw_price_text": raw.get("raw_price_text"),
+            "title_price": raw.get("title_price"),
+            "rent_net": raw.get("rent_net"),
+            "additional_costs": raw.get("additional_costs"),
+            "price_mismatch": bool(raw.get("price_mismatch", False)),
         }
 
 
