@@ -35,8 +35,8 @@ COURSE = "Scientific Programming — FS 2026"
 PROJECT_TITLE = "AI-Enhanced Analysis of\nZurich-Canton Rental Listings"
 STUDENT_NAMES = [
     "Drin Muslija",
-    "[Co-presenter 1 — edit]",
-    "[Co-presenter 2 — edit]",
+    "Issa Fawaz",
+    "Valdrin Dalipi",
 ]
 RESEARCH_QUESTION = (
     "Which factors — size, room count, location, and amenity features —\n"
