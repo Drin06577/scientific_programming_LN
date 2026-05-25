@@ -18,6 +18,7 @@ recording.
 
 from __future__ import annotations
 
+import textwrap
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -228,17 +229,19 @@ def slide_figure(pdf: PdfPages, n: int, total: int, header: str,
     fig, ax = _blank_slide()
     _slide_header(ax, n, total, header)
     _slide_title(ax, title, subtitle, y_title=0.85)
+    # Narrowed figure leaves more horizontal room for the take-away box,
+    # which previously had lines overflowing past its right border.
     if fig_path.exists():
         img = imread(str(fig_path))
-        # Center the figure horizontally, leave room for the takeaway at the bottom.
-        fig_ax = fig.add_axes([0.10, 0.16, 0.62, 0.62])
+        fig_ax = fig.add_axes([0.06, 0.16, 0.55, 0.62])
         fig_ax.imshow(img)
         fig_ax.set_axis_off()
     else:
         ax.text(0.4, 0.5, f"[missing: {fig_path.name}]", transform=ax.transAxes,
                 fontsize=14, color=DANGER, ha="center", va="center")
     # Take-away box on the right.
-    box_x, box_y, box_w, box_h = 0.74, 0.20, 0.22, 0.55
+    box_x, box_y, box_w, box_h = 0.65, 0.18, 0.31, 0.60
+    pad_x = 0.018
     ax.add_patch(FancyBboxPatch((box_x, box_y), box_w, box_h,
                                  boxstyle="round,pad=0.01",
                                  facecolor="#F3F4F6", edgecolor=NEUTRAL,
@@ -246,9 +249,17 @@ def slide_figure(pdf: PdfPages, n: int, total: int, header: str,
     ax.text(box_x + box_w / 2, box_y + box_h - 0.04, "Take-away",
             transform=ax.transAxes, fontsize=14, color=PRIMARY,
             fontweight="bold", ha="center", va="top")
-    ax.text(box_x + 0.012, box_y + box_h - 0.10, take_away,
+    # Pre-wrap paragraph by paragraph: matplotlib's wrap=True wraps to the
+    # *figure* width, not the box width, so manual textwrap.fill keeps the
+    # lines inside the rounded box. ~36 chars/line fits the 0.31-wide box at
+    # 12pt with comfortable margins.
+    wrapped = "\n\n".join(
+        textwrap.fill(para, width=36)
+        for para in take_away.split("\n\n")
+    )
+    ax.text(box_x + pad_x, box_y + box_h - 0.10, wrapped,
             transform=ax.transAxes, fontsize=12, color=INK,
-            ha="left", va="top", wrap=True, linespacing=1.45)
+            ha="left", va="top", linespacing=1.45)
     pdf.savefig(fig, facecolor=PAGE_BG)
     plt.close(fig)
 
@@ -314,8 +325,8 @@ def slide_thank_you(pdf: PdfPages, n: int, total: int) -> None:
             transform=ax.transAxes, fontsize=14, color=NEUTRAL,
             va="center", ha="center")
     ax.text(0.5, 0.16,
-            "Source code & figures: GitHub branch "
-            "feat/price-validation-report-figures",
+            "Source code & figures: "
+            "github.com/Drin06577/scientific_programming_LN",
             transform=ax.transAxes, fontsize=11, color=NEUTRAL,
             style="italic", va="center", ha="center")
     pdf.savefig(fig, facecolor=PAGE_BG)
@@ -403,7 +414,7 @@ def build_pdf() -> Path:
         _slide_title(ax, "Where everything lives",
                      "For graders who want to inspect the code")
         _bullets(ax, [
-            "GitHub branch — feat/price-validation-report-figures",
+            "GitHub repo — github.com/Drin06577/scientific_programming_LN",
             "Pipeline entry-point — `python -m src.pipeline`  (prints QC report)",
             "Dashboard       — `streamlit run app/streamlit_app.py`",
             "Report figures  — `python -m src.report_figures`  → reports/figures/",
