@@ -79,15 +79,25 @@ def _slide_header(ax: plt.Axes, slide_num: int, total: int, header: str) -> None
 
 def _bullets(ax: plt.Axes, bullets: list[str], y_start: float = 0.70,
              y_gap: float = 0.085, indent: float = 0.07,
-             fontsize: int = 17, color: str = INK) -> None:
-    """Render a vertical bullet list at the given start y."""
+             fontsize: int = 17, color: str = INK,
+             wrap_width: int | None = None) -> None:
+    """Render a vertical bullet list at the given start y.
+
+    Bullet text is hard-wrapped with textwrap.fill so it stays inside a
+    readable column instead of running edge-to-edge across the slide
+    (matplotlib's wrap=True wraps to figure width, not to a column).
+    Default character widths are tuned for the slide's 13.33-inch width:
+    ~78 chars at fontsize 17, ~90 chars at fontsize 15.
+    """
+    if wrap_width is None:
+        wrap_width = 78 if fontsize >= 17 else 92
     for i, b in enumerate(bullets):
         y = y_start - i * y_gap
         ax.text(indent, y, "•", transform=ax.transAxes, fontsize=fontsize + 4,
                 color=PRIMARY, va="top", ha="left", fontweight="bold")
-        ax.text(indent + 0.025, y, b, transform=ax.transAxes,
-                fontsize=fontsize, color=color, va="top", ha="left",
-                wrap=True)
+        wrapped = textwrap.fill(b, width=wrap_width)
+        ax.text(indent + 0.025, y, wrapped, transform=ax.transAxes,
+                fontsize=fontsize, color=color, va="top", ha="left")
 
 
 def _slide_title(ax: plt.Axes, title: str, subtitle: str | None = None,
