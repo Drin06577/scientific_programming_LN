@@ -106,7 +106,10 @@ def fetch_details(listings: list[dict], max_workers: int = 4,
 
 def _to_cleaner_shape(rec: dict) -> dict:
     """API + HTML record → cleaning-stage dict. Preserves listing_url
-    and zip_code so the dashboard can render clickable links."""
+    and zip_code so the dashboard can render clickable links, plus the
+    price-provenance fields (raw_price_text / title_price / rent_net /
+    additional_costs / price_mismatch) added by the updated collector.
+    Older cached JSON without those fields stays compatible via .get."""
     return {
         "title": rec.get("title", ""),
         "price": f"CHF {rec.get('rent_price', '')}",
@@ -117,6 +120,12 @@ def _to_cleaner_shape(rec: dict) -> dict:
         "listing_url": rec.get("listing_url", ""),
         "features": rec.get("features", []) or [],
         "description": rec.get("description", "") or "",
+        # Price provenance — added by collect_zurich.to_output.
+        "raw_price_text": rec.get("raw_price_text"),
+        "title_price": rec.get("title_price"),
+        "rent_net": rec.get("rent_net"),
+        "additional_costs": rec.get("additional_costs"),
+        "price_mismatch": rec.get("price_mismatch", False),
     }
 
 
@@ -175,6 +184,9 @@ def run_pipeline(use_llm: bool = True, save_figures: bool = False,
     # 7. Data quality validation.
     if apply_quality:
         df_clean, quality_report = validate(df)
+        # Print the price-focused QC summary to the console so anyone running
+        # the pipeline sees mismatch/missing/removed counts before the plots.
+        quality_report.print_summary()
     else:
         from .data_quality import QualityReport
         df_clean = df.copy()

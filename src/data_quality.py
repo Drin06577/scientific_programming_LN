@@ -31,6 +31,11 @@ ROOMS_MIN: float = 1.0
 ROOMS_MAX: float = 8.0
 CHF_PER_M2_MIN: float = 10.0
 CHF_PER_M2_MAX: float = 200.0
+# Threshold for "suspicious" — when the price extracted from the listing's
+# visible title differs from the structured rent_gross by this much, flag the
+# row so a human can audit it. Kept (not dropped) by default because rent_gross
+# is the authoritative value and the mismatch usually reflects stale title text.
+PRICE_MISMATCH_TOLERANCE: int = 100
 
 
 @dataclass
@@ -45,11 +50,14 @@ class QualityReport:
     n_output: int = 0
     n_duplicates: int = 0
     n_missing_required: int = 0
+    n_missing_price: int = 0
     n_impossible_price: int = 0
     n_impossible_size: int = 0
     n_impossible_rooms: int = 0
     n_chf_per_m2_outliers: int = 0
     n_statistical_outliers: int = 0
+    n_suspicious_price: int = 0
+    suspicious_examples: pd.DataFrame = field(default_factory=pd.DataFrame)
     dropped_examples: pd.DataFrame = field(default_factory=pd.DataFrame)
 
     def as_dict(self) -> dict:
@@ -58,13 +66,55 @@ class QualityReport:
             "n_output": self.n_output,
             "n_duplicates": self.n_duplicates,
             "n_missing_required": self.n_missing_required,
+            "n_missing_price": self.n_missing_price,
             "n_impossible_price": self.n_impossible_price,
             "n_impossible_size": self.n_impossible_size,
             "n_impossible_rooms": self.n_impossible_rooms,
             "n_chf_per_m2_outliers": self.n_chf_per_m2_outliers,
             "n_statistical_outliers": self.n_statistical_outliers,
+            "n_suspicious_price": self.n_suspicious_price,
             "retention_rate": (self.n_output / self.n_input) if self.n_input else 0.0,
         }
+
+    def print_summary(self) -> None:
+        """Console-friendly QC summary required by the report.
+
+        Prints input/valid/missing/suspicious/removed counts, then up to 10
+        suspicious-listing examples so the user can audit them before the
+        plots run. Safe to call even when nothing was flagged.
+        """
+        n_valid = self.n_output
+        n_missing = self.n_missing_price + self.n_missing_required
+        n_removed = (
+            self.n_duplicates + self.n_missing_required + self.n_missing_price
+            + self.n_impossible_price + self.n_impossible_size
+            + self.n_impossible_rooms + self.n_chf_per_m2_outliers
+            + self.n_statistical_outliers
+        )
+        print("\n=== Price quality-control report ===")
+        print(f"  scraped (input rows)   : {self.n_input}")
+        print(f"  valid prices kept      : {n_valid}")
+        print(f"  missing prices         : {n_missing}")
+        print(f"  suspicious (kept)      : {self.n_suspicious_price}")
+        print(f"  removed by validator   : {n_removed}")
+        print(f"    duplicates           : {self.n_duplicates}")
+        print(f"    impossible_price     : {self.n_impossible_price}")
+        print(f"    impossible_size      : {self.n_impossible_size}")
+        print(f"    impossible_rooms     : {self.n_impossible_rooms}")
+        print(f"    chf_per_m2_outliers  : {self.n_chf_per_m2_outliers}")
+        print(f"    statistical_outliers : {self.n_statistical_outliers}")
+        if len(self.suspicious_examples):
+            print(f"\n  Suspicious listings (price mismatch ≥ CHF {PRICE_MISMATCH_TOLERANCE}, "
+                  f"first {min(10, len(self.suspicious_examples))} shown):")
+            cols = [c for c in
+                    ["listing_url", "title", "raw_price_text", "price", "size", "rooms"]
+                    if c in self.suspicious_examples.columns]
+            for _, row in self.suspicious_examples[cols].head(10).iterrows():
+                print(f"    - url: {row.get('listing_url', '?')}")
+                print(f"      title: {str(row.get('title', ''))[:80]}")
+                print(f"      raw_price_text={row.get('raw_price_text')!r}  "
+                      f"extracted_price={row.get('price')}  "
+                      f"size={row.get('size')}  rooms={row.get('rooms')}")
 
 
 def _ensure_chf_per_m2(df: pd.DataFrame) -> pd.DataFrame:
@@ -110,13 +160,30 @@ def validate(df: pd.DataFrame, *, drop_outliers: bool = True) -> tuple[pd.DataFr
         report.n_duplicates = int(dup_mask.sum())
         df = df.loc[~dup_mask].copy()
 
-    # 2. Missing required fields.
-    required = ["price", "size", "rooms", "city"]
+    # 2a. Missing price specifically — surfaced as its own count for the
+    # QC report (the user asked us to separate "missing prices" from other
+    # missing-required drops).
+    miss_price_mask = df["price"].isna()
+    if miss_price_mask.any():
+        dropped_rows.append(df.loc[miss_price_mask].assign(_drop_reason="missing_price"))
+        report.n_missing_price = int(miss_price_mask.sum())
+        df = df.loc[~miss_price_mask].copy()
+
+    # 2b. Missing other required fields.
+    required = ["size", "rooms", "city"]
     miss_mask = df[required].isna().any(axis=1)
     if miss_mask.any():
         dropped_rows.append(df.loc[miss_mask].assign(_drop_reason="missing_required"))
         report.n_missing_required = int(miss_mask.sum())
         df = df.loc[~miss_mask].copy()
+
+    # 2c. Type/numeric validation: a non-numeric price slipped past parsing.
+    df["price"] = pd.to_numeric(df["price"], errors="coerce")
+    non_numeric = df["price"].isna()
+    if non_numeric.any():
+        dropped_rows.append(df.loc[non_numeric].assign(_drop_reason="non_numeric_price"))
+        report.n_missing_price += int(non_numeric.sum())
+        df = df.loc[~non_numeric].copy()
 
     # 3. Impossible values: price/size/rooms outside plausibility bounds.
     bad_price = ~df["price"].between(PRICE_MIN, PRICE_MAX)
@@ -133,6 +200,27 @@ def validate(df: pd.DataFrame, *, drop_outliers: bool = True) -> tuple[pd.DataFr
         report.n_impossible_rooms = int(bad_rooms.sum())
     impossible_mask = bad_price | bad_size | bad_rooms
     df = df.loc[~impossible_mask].copy()
+
+    # 3b. Suspicious-price audit — kept in the dataset, but recorded.
+    # Compares the title-derived CHF amount (raw_price_text / title_price) with
+    # the structured rent_gross we kept as `price`. When the gap exceeds the
+    # tolerance the row is flagged in the QC report so a human can audit it.
+    if "title_price" in df.columns:
+        tp = pd.to_numeric(df["title_price"], errors="coerce")
+        gap = (tp - df["price"]).abs()
+        suspicious = gap >= PRICE_MISMATCH_TOLERANCE
+        # Also surface listings the collector marked as mismatch (in case
+        # title_price was unparseable but the collector saw something off).
+        if "price_mismatch" in df.columns:
+            suspicious = suspicious | df["price_mismatch"].fillna(False).astype(bool)
+        suspicious = suspicious.fillna(False)
+        if suspicious.any():
+            report.n_suspicious_price = int(suspicious.sum())
+            keep = [c for c in
+                    ["listing_url", "title", "raw_price_text", "title_price",
+                     "price", "size", "rooms", "city"]
+                    if c in df.columns]
+            report.suspicious_examples = df.loc[suspicious, keep].reset_index(drop=True)
 
     # 4. CHF/m² hard sanity — rules out parse errors that pass the
     # individual price/size checks (e.g. price 2 000 with size 8 → 250 CHF/m²).
@@ -153,7 +241,8 @@ def validate(df: pd.DataFrame, *, drop_outliers: bool = True) -> tuple[pd.DataFr
             df = df.loc[ok_mask].copy()
 
     if dropped_rows:
-        keep_cols = ["title", "price", "size", "rooms", "city", "chf_per_m2", "_drop_reason"]
+        keep_cols = ["listing_url", "title", "raw_price_text",
+                     "price", "size", "rooms", "city", "chf_per_m2", "_drop_reason"]
         examples = pd.concat(dropped_rows, ignore_index=True)
         report.dropped_examples = examples[
             [c for c in keep_cols if c in examples.columns]
